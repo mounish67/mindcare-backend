@@ -1,16 +1,14 @@
-# ===== FINAL BACKEND (FULLY MERGED) =====
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import torch
-from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch.nn.functional as F
 import random
 
 app = FastAPI()
 
-# ✅ CORS
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,33 +17,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ MODEL LOAD
-model = DistilBertForSequenceClassification.from_pretrained("emotion_model")
-tokenizer = DistilBertTokenizer.from_pretrained("emotion_model")
+# 🔥 LOAD MODEL FROM HUGGING FACE
+model_name = "Mounish79/mindcare-emotion-model"
+
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSequenceClassification.from_pretrained(model_name)
+
 model.eval()
 
 labels = ['angry','fear','happy','neutral','sad','stressed']
 
-
-# =========================
-# 📥 INPUT MODELS
-# =========================
 class TextInput(BaseModel):
     text: str
 
 
-
-# =========================
 # 🔥 EMOTION DETECTION
-# =========================
 def predict_emotion(text):
     t = text.lower()
 
-    # 🔴 strong rules (fixes your earlier issue)
-    if any(x in t for x in ["hurt myself","kill myself","suicide","end my life"]):
-        return "sad",0.95
-    if "anxious" in t or "confused" in t:
-        return "stressed",0.9
+    # Crisis override
+    if any(x in t for x in ["hurt myself","suicide","kill myself"]):
+        return "sad", 0.95
 
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
 
@@ -58,68 +50,59 @@ def predict_emotion(text):
     return labels[pred.item()], float(conf.item())
 
 
-# =========================
-# 💬 HUMAN-LIKE RESPONSES
-# =========================
+# 🔥 DYNAMIC RESPONSES (NOT STATIC)
 responses = {
-    "sad":[
-        "I'm really sorry you're feeling like this… you don’t have to go through it alone.",
-        "That sounds really heavy… I’m here with you, tell me more.",
-        "It’s okay to feel low sometimes… I’m listening."
+    "sad": [
+        "I'm really sorry you're feeling like this… I'm here with you.",
+        "That sounds heavy… you don’t have to carry it alone.",
+        "I can feel this matters to you… tell me more."
     ],
-    "stressed":[
-        "That sounds overwhelming… try slowing things down for a moment.",
-        "You're dealing with a lot right now… take a deep breath.",
-        "Let’s take it one step at a time… you’re not alone."
+    "stressed": [
+        "That sounds overwhelming… let's slow things down together.",
+        "You're handling a lot… take a deep breath.",
+        "One step at a time… you're not alone."
     ],
-    "happy":[
-        "That’s amazing to hear! 😊",
-        "I love that energy — keep it going!",
-        "That sounds like a great moment for you!"
+    "happy": [
+        "That's amazing 😊 keep that energy!",
+        "I love hearing this — tell me more!",
+        "That’s a great moment for you!"
     ],
-    "angry":[
-        "I can understand that frustration…",
-        "Let’s pause for a moment before reacting.",
+    "angry": [
+        "I understand that frustration…",
+        "Let’s pause before reacting.",
         "That sounds intense… want to talk it out?"
     ],
-    "fear":[
-        "That sounds scary… but you’re safe right now.",
-        "Let’s slow down and breathe together.",
-        "You’re not alone in this feeling."
+    "fear": [
+        "That sounds scary… but you're safe.",
+        "Let's breathe slowly together.",
+        "You're not alone in this feeling."
     ],
-    "neutral":[
-        "I’m here… tell me more.",
-        "What’s on your mind?",
-        "I’m listening to you."
+    "neutral": [
+        "I'm here… tell me more.",
+        "What's on your mind?",
+        "I'm listening."
     ]
 }
 
 
-# =========================
-# 💡 COPING + RELAXATION
-# =========================
 coping = {
     "sad":["Talk to someone","Write feelings","Music"],
-    "stressed":["Deep breathing","Short walk","Break"],
-    "angry":["Pause","Count 10"],
+    "stressed":["Deep breathing","Short walk","Take a break"],
+    "angry":["Pause","Count to 10"],
     "fear":["Grounding","Breathing"],
-    "happy":["Enjoy moment"],
-    "neutral":["Mindfulness"]
+    "happy":["Enjoy the moment"],
+    "neutral":["Stay mindful"]
 }
 
 relaxation = {
     "sad":["Meditation","Soft music"],
     "stressed":["4-4 breathing","Stretch"],
     "angry":["Cold water","Step away"],
-    "fear":["5-4-3-2-1 grounding"],
+    "fear":["5-4-3-2-1 technique"],
     "happy":["Celebrate"],
     "neutral":["Relax"]
 }
 
-
-# =========================
-# 🎥 YOUTUBE SUPPORT
-# =========================
 youtube = {
     "sad":["https://youtu.be/2OEL4P1Rz04"],
     "stressed":["https://youtu.be/ZToicYcHIOU"],
@@ -130,47 +113,27 @@ youtube = {
 }
 
 
-# =========================
-# ⚠️ CRISIS DETECTION
-# =========================
 def detect_risk(text):
     return any(x in text.lower() for x in [
-        "hurt myself","kill myself","suicide","end my life"
+        "hurt myself","suicide","end my life"
     ])
 
 
-# =========================
-# 📊 TREND TRACKING
-# =========================
 emotion_history = []
 
-
-# =========================
-# 🧠 MENTAL STATE
-# =========================
 def mental_state(hist):
-    if len(hist) < 3:
-        return None
-
     if hist.count("sad") >= 3:
-        return "⚠️ You seem emotionally low lately. Consider talking to someone."
-
-    if hist.count("stressed") >= 3:
-        return "⚠️ You seem stressed recently. Try relaxation."
-
-    return None
+        return "⚠️ You seem emotionally low recently. Consider talking to someone."
+    return "Stable 👍"
 
 
-# =========================
-# 🚀 MAIN CHAT API
-# =========================
 @app.post("/analyze")
-def analyze(data:TextInput):
+def analyze(data: TextInput):
 
-    emotion,conf = predict_emotion(data.text)
+    emotion, conf = predict_emotion(data.text)
 
     emotion_history.append(emotion)
-    if len(emotion_history)>5:
+    if len(emotion_history) > 5:
         emotion_history.pop(0)
 
     crisis = detect_risk(data.text)
@@ -181,16 +144,13 @@ def analyze(data:TextInput):
         reply += " 🚨 Please seek professional help immediately."
 
     return {
-        "emotion":emotion,
-        "confidence":round(conf*100,2),
-        "response":reply,
-        "coping":coping[emotion],
-        "relaxation":relaxation[emotion],
-        "youtube":youtube[emotion],
-        "is_crisis":crisis,
-        "trend":emotion_history,
-        "mental_state":mental_state(emotion_history),
-        "show_assessment": emotion=="neutral" or conf<0.6
+        "emotion": emotion,
+        "confidence": round(conf*100,2),
+        "response": reply,
+        "coping": coping[emotion],
+        "relaxation": relaxation[emotion],
+        "youtube": youtube[emotion],
+        "is_crisis": crisis,
+        "trend": emotion_history,
+        "mental_state": mental_state(emotion_history)
     }
-
-
