@@ -1,9 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import torch.nn.functional as F
+import requests
 import random
 
 app = FastAPI()
@@ -17,21 +15,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔥 LOAD MODEL FROM HUGGING FACE
-model_name = "Mounish79/mindcare-emotion-model"
+# 🔑 HUGGING FACE API
+HF_API = "https://api-inference.huggingface.co/models/Mounish79/mindcare-emotion-model"
 
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-model = AutoModelForSequenceClassification.from_pretrained(model_name)
-
-model.eval()
-
-labels = ['angry','fear','happy','neutral','sad','stressed']
+headers = {
+    "Authorization": "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"
+}
 
 class TextInput(BaseModel):
     text: str
 
 
-# 🔥 EMOTION DETECTION
+# 🔥 EMOTION DETECTION (HF API)
 def predict_emotion(text):
     t = text.lower()
 
@@ -39,18 +34,21 @@ def predict_emotion(text):
     if any(x in t for x in ["hurt myself","suicide","kill myself"]):
         return "sad", 0.95
 
-    inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
+    try:
+        payload = {"inputs": text}
+        response = requests.post(HF_API, headers=headers, json=payload)
+        result = response.json()
 
-    with torch.no_grad():
-        outputs = model(**inputs)
+        scores = result[0]
+        best = max(scores, key=lambda x: x['score'])
 
-    probs = F.softmax(outputs.logits, dim=1)
-    conf, pred = torch.max(probs, dim=1)
+        return best['label'].lower(), float(best['score'])
 
-    return labels[pred.item()], float(conf.item())
+    except:
+        return "neutral", 0.5
 
 
-# 🔥 DYNAMIC RESPONSES (NOT STATIC)
+# 🔥 RESPONSES
 responses = {
     "sad": [
         "I'm really sorry you're feeling like this… I'm here with you.",
@@ -84,7 +82,6 @@ responses = {
     ]
 }
 
-
 coping = {
     "sad":["Talk to someone","Write feelings","Music"],
     "stressed":["Deep breathing","Short walk","Take a break"],
@@ -112,12 +109,10 @@ youtube = {
     "neutral":["https://youtu.be/inpok4MKVLM"]
 }
 
-
 def detect_risk(text):
     return any(x in text.lower() for x in [
         "hurt myself","suicide","end my life"
     ])
-
 
 emotion_history = []
 
@@ -138,7 +133,7 @@ def analyze(data: TextInput):
 
     crisis = detect_risk(data.text)
 
-    reply = random.choice(responses[emotion])
+    reply = random.choice(responses.get(emotion, responses["neutral"]))
 
     if crisis:
         reply += " 🚨 Please seek professional help immediately."
@@ -147,9 +142,9 @@ def analyze(data: TextInput):
         "emotion": emotion,
         "confidence": round(conf*100,2),
         "response": reply,
-        "coping": coping[emotion],
-        "relaxation": relaxation[emotion],
-        "youtube": youtube[emotion],
+        "coping": coping.get(emotion, []),
+        "relaxation": relaxation.get(emotion, []),
+        "youtube": youtube.get(emotion, []),
         "is_crisis": crisis,
         "trend": emotion_history,
         "mental_state": mental_state(emotion_history)
